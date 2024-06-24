@@ -10,7 +10,7 @@ import (
 func main() {
 	fmt.Println("Starting Core Service...")
 
-	zkClient, err := zookeeper_client.NewZookeeperClient("localhost:2181")
+	zkClient, err := zookeeper_client.NewZookeeperClient("localhost:2181", "")
 	if err != nil {
 		log.Fatalf("Failed to connect to Zookeeper: %v", err)
 	}
