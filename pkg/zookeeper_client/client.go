@@ -108,10 +108,22 @@ func (z *ZookeeperClient) RegisterBroker(brokerID string) error {
 	return nil
 }
 
-func (z *ZookeeperClient) RegisterTopic(topicName string, partitionCount int, brokerName string) error {
+func (z *ZookeeperClient) RegisterTopic(topicName string, partitionCount int) error {
 	// Implement registration of a topic and assignment to a broker in Zookeeper
-	log.Printf("Registering topic %s with %d partitions to broker %s...", topicName, partitionCount, brokerName)
+	// log.Printf("Registering topic %s with %d partitions to broker %s...", topicName, partitionCount, brokerName)
 	// Actual Zookeeper operation to register the topic and assign it to a broker goes here
+
+	topicPath := filepath.Join(topicPath, topicName)
+	data := []byte(fmt.Sprintf("%d", partitionCount))
+	_, err := z.conn.Create(topicPath, data, 0, zk.WorldACL(zk.PermAll))
+	if err != nil {
+		if err == zk.ErrNodeExists {
+			log.Printf("Topic %s is already registered", topicName)
+			return nil
+		}
+		return fmt.Errorf("failed to register topic %s: %v", topicName, err)
+	}
+	log.Printf("Topic %s successfully registered with %d partitions.", topicName, partitionCount)
 	return nil
 }
 
