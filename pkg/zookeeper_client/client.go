@@ -1,6 +1,7 @@
 package zookeeper_client
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -139,4 +140,23 @@ func (z *ZookeeperClient) WriteAheadLog(data []byte) error {
 		return fmt.Errorf("failed to write to WAL: %v", err)
 	}
 	return nil
+}
+
+func (z *ZookeeperClient) ReadWAL() ([][]byte, error) {
+	file, err := os.Open(z.walPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open WAL file: %v", err)
+	}
+	defer file.Close()
+
+	var entries [][]byte
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		entries = append(entries, scanner.Bytes())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading WAL: %v", err)
+	}
+	return entries, nil
 }
