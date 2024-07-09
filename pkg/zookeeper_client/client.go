@@ -69,30 +69,42 @@ func (z *ZookeeperClient) Close() {
 	z.conn.Close()
 }
 
-func (z *ZookeeperClient) RegisterBroker(brokerName string) error {
-	// .. create broker node in Zookeeper
-	log.Printf("Registering broker %s in Zookeeper...", brokerName)
-	// Actual Zookeeper operation to register the broker goes here
+func (z *ZookeeperClient) createPathIfNotExist(path string) error {
+	exists, _, err := z.conn.Exists(path)
+	if err != nil {
+		return fmt.Errorf("failed to check if path exists: %v", err)
+	}
+	if !exists {
+		_, err = z.conn.Create(path, nil, 0, zk.WorldACL(zk.PermAll))
+		if err != nil && err != zk.ErrNodeExists {
+			return fmt.Errorf("failed to create path: %v", err)
+		}
+	}
+	return nil
+}
+
+func (z *ZookeeperClient) RegisterBroker(brokerID string) error {
+	log.Printf("Registering broker %s in Zookeeper...", brokerID)
 
 	// Construct the full path for the broker node
-	brokerPath := filepath.Join(z.brokersRootPath, brokerName)
+	brokerPath := filepath.Join(z.brokersRootPath, brokerID)
 
 	log.Printf("Attempting to create broker at path: %s", brokerPath)
 
 	// Attempt to create an ephemeral node for the broker
-	_, err := z.conn.Create(brokerPath, []byte(brokerName), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	_, err := z.conn.Create(brokerPath, []byte(brokerID), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	/*
 		ACL - Access Control Lists - determine who can perform which operations.
 		ACL is a combination of authentication scheme, an identity for that scheme, and a set of permissions
 	*/
 	if err != nil {
 		if err == zk.ErrNodeExists {
-			log.Printf("Broker %s is already registered.", brokerName)
+			log.Printf("Broker %s is already registered.", brokerID)
 			return nil // Node exists, which is expected for ephemeral nodes; return success
 		}
-		return fmt.Errorf("failed to register broker %s: %v", brokerName, err)
+		return fmt.Errorf("failed to register broker %s: %v", brokerID, err)
 	}
-	log.Printf("Broker %s successfully registered in Zookeeper.", brokerName)
+	log.Printf("Broker %s successfully registered in Zookeeper.", brokerID)
 	return nil
 }
 
