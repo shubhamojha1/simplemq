@@ -127,4 +127,16 @@ func (z *ZookeeperClient) RegisterTopic(topicName string, partitionCount int) er
 	return nil
 }
 
-// Additional methods for Zookeeper interactions
+func (z *ZookeeperClient) WriteAheadLog(data []byte) error {
+	file, err := os.OpenFile(z.walPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open WAL file: %v", err)
+	}
+	defer file.Close()
+
+	_, err = file.Write(append(data, '\n'))
+	if err != nil {
+		return fmt.Errorf("failed to write to WAL: %v", err)
+	}
+	return nil
+}
