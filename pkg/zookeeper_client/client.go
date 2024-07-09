@@ -10,9 +10,15 @@ import (
 	"github.com/go-zookeeper/zk"
 )
 
+const (
+	brokerPath = ""
+	topicPath  = ""
+)
+
 type ZookeeperClient struct {
-	conn    *zk.Conn
-	walPath string // write-ahead log
+	conn            *zk.Conn
+	walPath         string // write-ahead log
+	brokersRootPath string
 }
 
 func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
@@ -42,10 +48,21 @@ func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
 		return nil, fmt.Errorf("failed to create WAL directory: %v", err)
 	}
 
-	return &ZookeeperClient{
-		conn:    conn,
-		walPath: walFilePath,
-	}, nil
+	client := &ZookeeperClient{
+		conn:            conn,
+		walPath:         walFilePath,
+		brokersRootPath: brokerPath,
+	}
+
+	// Ensure necessary Zookeeper paths exist
+	for _, path := range []string{brokerPath, topicPath} {
+		err = client.createPathIfNotExist(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return client, nil
 }
 
 func (z *ZookeeperClient) Close() {
@@ -56,6 +73,26 @@ func (z *ZookeeperClient) RegisterBroker(brokerName string) error {
 	// .. create broker node in Zookeeper
 	log.Printf("Registering broker %s in Zookeeper...", brokerName)
 	// Actual Zookeeper operation to register the broker goes here
+
+	// Construct the full path for the broker node
+	brokerPath := filepath.Join(z.brokersRootPath, brokerName)
+
+	log.Printf("Attempting to create broker at path: %s", brokerPath)
+
+	// Attempt to create an ephemeral node for the broker
+	_, err := z.conn.Create(brokerPath, []byte(brokerName), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	/*
+		ACL - Access Control Lists - determine who can perform which operations.
+		ACL is a combination of authentication scheme, an identity for that scheme, and a set of permissions
+	*/
+	if err != nil {
+		if err == zk.ErrNodeExists {
+			log.Printf("Broker %s is already registered.", brokerName)
+			return nil // Node exists, which is expected for ephemeral nodes; return success
+		}
+		return fmt.Errorf("failed to register broker %s: %v", brokerName, err)
+	}
+	log.Printf("Broker %s successfully registered in Zookeeper.", brokerName)
 	return nil
 }
 
