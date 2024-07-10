@@ -3,6 +3,7 @@ package wal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -20,3 +21,22 @@ func NewWAL(directory string) (*WAL, error) {
 		directory: directory,
 	}, nil
 }
+
+func (w *WAL) Append(topic string, partitionID int, message []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	fileName := filepath.Join(w.directory, fmt.Sprintf("%s-%d.log", topic, partitionID))
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open WAL file: %v", err)
+	}
+	defer file.Close()
+
+	if _, err := file.Write(append(message, '\n')); err != nil {
+		return fmt.Errorf("failed to write to WAL: %v", err)
+	}
+	return nil
+}
+
+func 
