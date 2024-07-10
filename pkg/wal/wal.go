@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,4 +40,27 @@ func (w *WAL) Append(topic string, partitionID int, message []byte) error {
 	return nil
 }
 
-func 
+func (w *WAL) Read(topic string, partitionID int) ([][]byte, error) {
+	fileName := filepath.Join(w.directory, fmt.Sprintf("%s-%d.log", topic, partitionID))
+	file, err := os.Open(fileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return [][]byte{}, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to open WAL file: %v", err)
+
+	defer file.Close()
+
+	var messages [][]byte
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		messages = append(messages, scanner.Bytes())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading WAL: %v", err)
+	}
+
+	return messages, nil
+}
