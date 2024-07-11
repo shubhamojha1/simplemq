@@ -2,6 +2,8 @@ package broker
 
 import (
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 
 	"github.com/shubhamojha1/simplemq/pkg/wal"
@@ -58,6 +60,12 @@ func (b *Broker) Start() error {
 
 	// replayWal() -> important to ensure data consistency, durability, persistence
 	// helpful in case of -> recovery from crashes, atomicity and consistency,
+	err = b.replayWal()
+	if err != nil {
+		log.Printf("Error replaying WAL: %v", err)
+	}
+
+	// load topics and partitions
 
 	return nil
 }
@@ -65,6 +73,54 @@ func (b *Broker) Start() error {
 func (b *Broker) Stop() error {
 	close(b.shutdownCh)
 	// cleanup operations, unregister from Zookeeper, close connections, etc.
+	return nil
+}
+
+func (b *Broker) replayWal() error {
+	entries, err := b.zkClient.ReadWAL()
+	if err != nil {
+		return fmt.Errorf("failed to read WAL: %v", err)
+	}
+
+	for _, entry := range entries {
+		parts := strings.SplitN(string(entry), ":", 2)
+		if len(parts) != 2 {
+			log.Printf("Invalid WAL entry: %s", string(entry))
+			continue
+		}
+
+		operation, data := parts[0], parts[1]
+		switch operation {
+		case "REGISTER_BROKER":
+			err = b.zkClient.RegisterBroker(data)
+			if err != nil {
+				log.Printf("Failed to replay broker registration: %v", err)
+			}
+		case "CREATE_TOPIC":
+			topicParts := strings.SplitN(data, ",", 2)
+			if len(topicParts) != 2 {
+				log.Printf("Invalid CREATE_TOPIC entry: %s", data)
+				continue
+			}
+			err = b.CreateTopic(topicParts[0], parseInt(topicParts[1]))
+			if err != nil {
+				log.Printf("Failed to replay topic creation: %v", err)
+			}
+		case "ASSIGN_PARTITION":
+			partitionParts := strings.SplitN(data, ",", 3)
+			if len(partitionParts) != 3 {
+				log.Printf("Invalid ASSIGN_PARTITION entry: %s", data)
+				continue
+			}
+			err = b.AssignPartition()
+			if err != nil {
+				log.Printf("Failed to replay partition assignment: %v", err)
+			}
+			// Other operations ???
+		default:
+			log.Printf("Unknown operation in WAL: %s", operation)
+		}
+	}
 	return nil
 }
 
