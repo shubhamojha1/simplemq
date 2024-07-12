@@ -212,3 +212,21 @@ func (b *Broker) CreateTopic(name string, partitionCount int) error {
 
 	return nil
 }
+
+func (b *Broker) AssignPartition(topic string, partitionID int, leaderID string) error {
+	err := b.zkClient.WriteAheadLog([]byte(fmt.Sprintf("ASSIGN_PARTITION:%s,%d,%s", topic, partitionID, leaderID)))
+	if err != nil {
+		return fmt.Errorf("failed to write to WAL: %v", err)
+	}
+
+	b.producerLock.Lock()
+	defer b.producerLock.Unlock()
+
+	if partition, exists := b.partitions[partitionID]; exists {
+		partition.Leader = leaderID
+	} else {
+		return fmt.Errorf("partition %d does not exist", partitionID)
+	}
+
+	return nil
+}
