@@ -47,8 +47,8 @@ func (w *WAL) Read(topic string, partitionID int) ([][]byte, error) {
 		if os.IsNotExist(err) {
 			return [][]byte{}, nil
 		}
+		return nil, fmt.Errorf("failed to open WAL file: %v", err)
 	}
-	return nil, fmt.Errorf("failed to open WAL file: %v", err)
 
 	defer file.Close()
 

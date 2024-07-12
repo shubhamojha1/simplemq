@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	brokerPath = ""
-	topicPath  = ""
+	brokerPath = "/simplemq/brokers"
+	topicPath  = "/simplemq/topics"
 )
 
 type ZookeeperClient struct {
-	conn            *zk.Conn
-	walPath         string // write-ahead log
-	brokersRootPath string
+	conn    *zk.Conn
+	walPath string // write-ahead log
+	// brokersRootPath string
 }
 
 func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
@@ -50,9 +50,9 @@ func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
 	}
 
 	client := &ZookeeperClient{
-		conn:            conn,
-		walPath:         walFilePath,
-		brokersRootPath: brokerPath,
+		conn:    conn,
+		walPath: walFilePath,
+		// brokersRootPath: brokerPath,
 	}
 
 	// Ensure necessary Zookeeper paths exist
@@ -88,7 +88,7 @@ func (z *ZookeeperClient) RegisterBroker(brokerID string) error {
 	log.Printf("Registering broker %s in Zookeeper...", brokerID)
 
 	// Construct the full path for the broker node
-	brokerPath := filepath.Join(z.brokersRootPath, brokerID)
+	brokerPath := filepath.Join(brokerPath, brokerID)
 
 	log.Printf("Attempting to create broker at path: %s", brokerPath)
 
@@ -135,7 +135,7 @@ func (z *ZookeeperClient) WriteAheadLog(data []byte) error {
 	}
 	defer file.Close()
 
-	_, err = file.Write(append(data, '\n'))
+	_, err = file.Write(append(data, '\r', '\n'))
 	if err != nil {
 		return fmt.Errorf("failed to write to WAL: %v", err)
 	}
@@ -145,6 +145,9 @@ func (z *ZookeeperClient) WriteAheadLog(data []byte) error {
 func (z *ZookeeperClient) ReadWAL() ([][]byte, error) {
 	file, err := os.Open(z.walPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return [][]byte{}, nil
+		}
 		return nil, fmt.Errorf("failed to open WAL file: %v", err)
 	}
 	defer file.Close()
@@ -159,4 +162,20 @@ func (z *ZookeeperClient) ReadWAL() ([][]byte, error) {
 		return nil, fmt.Errorf("error reading WAL: %v", err)
 	}
 	return entries, nil
+}
+
+func (z *ZookeeperClient) UpdateBrokerHeartBeat(brokerID string) error {
+	heartbeatPath := filepath.Join(brokerPath, brokerID, "heartbeat")
+
+	heartbeatValue := []byte(time.Now().String())
+
+	// Update the heartbeat in Zookeeper
+	_, err := z.conn.Set(heartbeatPath, heartbeatValue, 0)
+	if err != nil {
+		return fmt.Errorf("failed to update broker heartbeat: %v", err)
+	}
+
+	fmt.Printf("Updated heartbeat for broker %s\n", brokerID)
+	return nil
+
 }

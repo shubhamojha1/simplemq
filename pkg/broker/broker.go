@@ -215,6 +215,11 @@ func (b *Broker) monitorPartitions() {
 	}
 }
 
+func (b *Broker) checkPartitionLeaders() {
+	// Check if this broker should become leader for any partitions
+	// Update b.partitions accordingly
+}
+
 func (b *Broker) CreateTopic(name string, partitionCount int) error {
 	err := b.zkClient.WriteAheadLog([]byte(fmt.Sprintf("CREATE_TOPIC:%s,%d", name, partitionCount)))
 	if err != nil {
