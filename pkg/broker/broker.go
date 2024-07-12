@@ -112,11 +112,8 @@ func (b *Broker) replayWal() error {
 				log.Printf("Invalid CREATE_TOPIC entry: %s", data)
 				continue
 			}
-			partitionCount, err := strconv.Atoi(topicParts[1])
-			if err != nil {
-				log.Printf("Error in converting partitionCount to Integer")
-			}
-			err = b.CreateTopic(topicParts[0], partitionCount)
+
+			err = b.CreateTopic(topicParts[0], parseInt(topicParts[1]))
 			if err != nil {
 				log.Printf("Failed to replay topic creation: %v", err)
 			}
@@ -126,7 +123,7 @@ func (b *Broker) replayWal() error {
 				log.Printf("Invalid ASSIGN_PARTITION entry: %s", data)
 				continue
 			}
-			err = b.AssignPartition()
+			err = b.AssignPartition(partitionParts[0], parseInt(partitionParts[1]), partitionParts[2])
 			if err != nil {
 				log.Printf("Failed to replay partition assignment: %v", err)
 			}
@@ -147,10 +144,43 @@ func (b *Broker) ProduceMessage(topic string, message []byte) error {
 	defer b.producerLock.RUnlock()
 
 	partitions, exists := b.topics[topic]
+	if !exists {
+		return fmt.Errorf("topic %s does not exist", topic)
+	}
+
+	// Round-robin partition selection. Need to implement better
+	partitionID := partitions[0]
+
+	return b.wal.Append(topic, partitionID, message)
 }
 
 func (b *Broker) ConsumeMessage(consumerID, topic string) ([]byte, error) {
+	b.consumerLock.Lock()
+	defer b.consumerLock.Unlock()
 
+	consumer, exists := b.consumers[consumerID]
+	if !exists {
+		consumer = &Consumer{
+			ID:     consumerID,
+			Topics: []string{topic},
+		}
+		b.consumers[consumerID] = consumer
+	}
+
+	// Round-robin partition selection. Need to implement better
+	for _, t := range consumer.Topics {
+		if t == topic {
+			partitions := b.topics[topic]
+			for _, partitionID := range partitions {
+				messages, err := b.wal.Read(topic, partitionID)
+				if err == nil && len(messages) > 0 {
+					// just returning first message. Need to keep track of consumer offset.
+					return messages[0], nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("no messages available for consumer %s on topic %s", consumerID, topic)
 }
 
 func (b *Broker) heartbeat() {
@@ -229,4 +259,9 @@ func (b *Broker) AssignPartition(topic string, partitionID int, leaderID string)
 	}
 
 	return nil
+}
+
+func parseInt(s string) int {
+	i, _ := strconv.Atoi(s)
+	return i
 }
