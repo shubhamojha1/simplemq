@@ -3,6 +3,7 @@ package broker
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +68,10 @@ func (b *Broker) Start() error {
 	}
 
 	// load topics and partitions
+	err = b.loadTopicsAndPartitions()
+	if err != nil {
+		return fmt.Errorf("failed to load topics and partitions: %v", err)
+	}
 
 	go b.heartbeat()
 	go b.monitorPartitions()
@@ -107,7 +112,11 @@ func (b *Broker) replayWal() error {
 				log.Printf("Invalid CREATE_TOPIC entry: %s", data)
 				continue
 			}
-			err = b.CreateTopic(topicParts[0], parseInt(topicParts[1]))
+			partitionCount, err := strconv.Atoi(topicParts[1])
+			if err != nil {
+				log.Printf("Error in converting partitionCount to Integer")
+			}
+			err = b.CreateTopic(topicParts[0], partitionCount)
 			if err != nil {
 				log.Printf("Failed to replay topic creation: %v", err)
 			}
@@ -174,4 +183,32 @@ func (b *Broker) monitorPartitions() {
 
 		}
 	}
+}
+
+func (b *Broker) CreateTopic(name string, partitionCount int) error {
+	err := b.zkClient.WriteAheadLog([]byte(fmt.Sprintf("CREATE_TOPIC:%s,%d", name, partitionCount)))
+	if err != nil {
+		return fmt.Errorf("failed to write to WAL: %v", err)
+	}
+
+	err = b.zkClient.RegisterTopic(name, partitionCount)
+	if err != nil {
+		return fmt.Errorf("failed to register topic: %v", err)
+	}
+
+	b.producerLock.Lock()
+	defer b.producerLock.Unlock()
+
+	b.topics[name] = make([]int, partitionCount)
+
+	for i := 0; i < partitionCount; i++ {
+		partitionID := len(b.partitions)
+		b.partitions[partitionID] = &Partition{
+			ID:    partitionID,
+			Topic: name,
+		}
+		b.topics[name][i] = partitionID
+	}
+
+	return nil
 }
