@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shubhamojha1/simplemq/pkg/wal"
 	"github.com/shubhamojha1/simplemq/pkg/zookeeper_client"
@@ -67,6 +68,7 @@ func (b *Broker) Start() error {
 
 	// load topics and partitions
 
+	log.Printf("Broker %s started successfully", b.ID)
 	return nil
 }
 
@@ -124,9 +126,34 @@ func (b *Broker) replayWal() error {
 	return nil
 }
 
+func (b *Broker) loadTopicsAndPartitions() error {
+	return nil
+}
+
 func (b *Broker) ProduceMessage(topic string, message []byte) error {
 	b.producerLock.RLock()
 	defer b.producerLock.RUnlock()
 
 	partitions, exists := b.topics[topic]
+}
+
+func (b *Broker) ConsumeMessage(consumerID, topic string) ([]byte, error) {
+
+}
+
+func (b *Broker) heartbeat() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			err := b.zkClient.UpdateBrokerHeartBeat(b.ID)
+			if err != nil {
+				log.Printf("Failed to update heartbeat: %v", err)
+			}
+		case <-b.shutdownCh:
+			return
+		}
+	}
 }
