@@ -68,6 +68,9 @@ func (b *Broker) Start() error {
 
 	// load topics and partitions
 
+	go b.heartbeat()
+	go b.monitorPartitions()
+
 	log.Printf("Broker %s started successfully", b.ID)
 	return nil
 }
@@ -154,6 +157,21 @@ func (b *Broker) heartbeat() {
 			}
 		case <-b.shutdownCh:
 			return
+		}
+	}
+}
+
+func (b *Broker) monitorPartitions() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			b.checkPartitionLeaders()
+		case <-b.shutdownCh:
+			return
+
 		}
 	}
 }
