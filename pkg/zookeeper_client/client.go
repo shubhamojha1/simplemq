@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-zookeeper/zk"
@@ -24,12 +25,12 @@ type ZookeeperClient struct {
 
 func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
 
-	addresses := []string{address} // slice of strings
+	// addresses := []string{address} // slice of strings
 
 	// ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	// defer cancel() Not necessary. need to look more.
 
-	conn, _, err := zk.Connect(addresses, time.Second*5) // 5 secs timeout
+	conn, _, err := zk.Connect([]string{"127.0.0.1:2181"}, time.Second*10) // 5 secs timeout
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Zookeeper: %v", err)
 	}
@@ -63,6 +64,13 @@ func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
 		}
 	}
 
+	// for _, path := range []string{"/my_znode"} {
+	// 	err = client.createPathIfNotExist(path)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+
 	return client, nil
 }
 
@@ -71,15 +79,45 @@ func (z *ZookeeperClient) Close() {
 }
 
 func (z *ZookeeperClient) createPathIfNotExist(path string) error {
-	exists, _, err := z.conn.Exists(path)
-	if err != nil {
-		return fmt.Errorf("failed to check if path exists: %v", err)
-	}
-	if !exists {
-		_, err = z.conn.Create(path, nil, 0, zk.WorldACL(zk.PermAll))
-		if err != nil && err != zk.ErrNodeExists {
-			return fmt.Errorf("failed to create path: %v", err)
+	// exists, _, err := z.conn.Exists(path)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to check if path exists: %v", err)
+	// }
+	// if !exists {
+	data := []byte("my_data")
+	// 	flags := int32(zk.FlagEphemeral)
+	// 	// _, err = z.conn.Create(path, nil, 0, zk.WorldACL(zk.PermAll))
+	// 	_, err = z.conn.Create(path, data, flags, zk.WorldACL(zk.PermAll))
+	// 	if err != nil && err != zk.ErrNodeExists {
+	// 		return fmt.Errorf("failed to create path: %v", err)
+	// 	}
+	// }
+	// return nil
+
+	// acl := zk.WorldACL(zk.PermAll)
+	// _, err := z.conn.Create(path, data, 0, acl)
+	// if err != nil {
+	// 	log.Fatalf("Unable to create znode: %v", err)
+	// }
+
+	// ****************************************
+	// works. but broker registration problem.
+	parts := strings.Split(path, "/")
+	for i := 1; i < len(parts); i++ {
+		subPath := strings.Join(parts[:i+1], "/")
+		exists, _, err := z.conn.Exists(subPath)
+		if err != nil {
+			return fmt.Errorf("unable to check if znode exists: %v", err)
 		}
+
+		if !exists {
+			_, err := z.conn.Create(subPath, data, 0, zk.WorldACL(zk.PermAll))
+			if err != nil && err != zk.ErrNodeExists {
+				return fmt.Errorf("unable to create znode: %v", err)
+			}
+
+		}
+
 	}
 	return nil
 }
@@ -88,12 +126,14 @@ func (z *ZookeeperClient) RegisterBroker(brokerID string) error {
 	log.Printf("Registering broker %s in Zookeeper...", brokerID)
 
 	// Construct the full path for the broker node
-	brokerPath := filepath.Join(brokerPath, brokerID)
+	// brokerPath := filepath.Join(brokerPath, brokerID) # DO NOT USE filepath.
+	brokerPath := fmt.Sprintf("/simplemq/brokers/%s", brokerID)
 
 	log.Printf("Attempting to create broker at path: %s", brokerPath)
 
 	// Attempt to create an ephemeral node for the broker
-	_, err := z.conn.Create(brokerPath, []byte(brokerID), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	// _, err := z.conn.Create(brokerPath, []byte(brokerID), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	_, err := z.conn.Create(brokerPath, []byte(brokerID), 0, zk.WorldACL(zk.PermAll))
 	/*
 		ACL - Access Control Lists - determine who can perform which operations.
 		ACL is a combination of authentication scheme, an identity for that scheme, and a set of permissions
