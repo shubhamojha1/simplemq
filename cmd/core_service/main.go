@@ -48,7 +48,21 @@ func (bm *BrokerManager) AddBroker(id string) error {
 }
 
 func (bm *BrokerManager) RemoveBroker(id string) error {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
 
+	brk, exists := bm.brokers[id]
+	if !exists {
+		return fmt.Errorf("broker %s does not exist", id)
+	}
+
+	err := brk.Stop()
+	if err != nil {
+		return fmt.Errorf("failed to stop broker %s: %v", id, err)
+	}
+
+	delete(bm.brokers, id)
+	return nil
 }
 
 func main() {
