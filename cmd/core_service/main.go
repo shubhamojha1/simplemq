@@ -28,6 +28,14 @@ func NewBrokerManager(zkClient *zookeeper_client.ZookeeperClient, wal *wal.WAL) 
 	}
 }
 
+func (bm *BrokerManager) AddBroker(id string) error {
+
+}
+
+func (bm *BrokerManage) RemoveBroker(id string) error {
+
+}
+
 func main() {
 	fmt.Println("Starting Message Queue Server (Core Service)...")
 
@@ -70,6 +78,9 @@ func main() {
 	// select {}
 
 	brokerManager := NewBrokerManager(zkClient, wal)
+
+	// Add initial broker
+	err = brokerManager.AddBroker()
 
 }
 
