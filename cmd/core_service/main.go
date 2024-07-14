@@ -29,10 +29,25 @@ func NewBrokerManager(zkClient *zookeeper_client.ZookeeperClient, wal *wal.WAL) 
 }
 
 func (bm *BrokerManager) AddBroker(id string) error {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	if _, exists := bm.brokers[id]; exists {
+		return fmt.Errorf("broker %s already exists")
+	}
+
+	brk := broker.NewBroker(id, bm.zkClient, bm.wal)
+	err := brk.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start broker %s: %v", id, err)
+	}
+
+	bm.brokers[id] = brk
+	return nil
 
 }
 
-func (bm *BrokerManage) RemoveBroker(id string) error {
+func (bm *BrokerManager) RemoveBroker(id string) error {
 
 }
 
