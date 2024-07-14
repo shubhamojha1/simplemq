@@ -109,7 +109,10 @@ func main() {
 	brokerManager := NewBrokerManager(zkClient, wal)
 
 	// Add initial broker
-	err = brokerManager.AddBroker()
+	err = brokerManager.AddBroker("broker1")
+	if err != nil {
+		log.Fatalf("Failed to add initial broker: %v", err)
+	}
 
 }
 
