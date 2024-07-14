@@ -139,17 +139,35 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		parts := strings.SplitN(line, "|", 3)
-		if len(parts) < 3 {
+		parts := strings.SplitN(line, "|", 5)
+		if len(parts) < 2 {
 			log.Printf("Invalid command: %s", line)
-			return
+			continue
 		}
 
 		switch parts[0] {
-		case "SEND":
-			handleSendMesage(conn, parts[1], parts[2])
-		case "SUBSCRIBE":
-			handleSubscribe(conn, parts[1])
+		case "PRODUCE":
+			if len(parts) < 5 {
+				log.Printf("Invalid PRODUCE command: %s", line)
+				continue
+			}
+			handleProduceMessage()
+		case "CONSUME":
+			if len(parts) < 4 {
+				log.Printf("Invalid CONSUME command: %s", line)
+				continue
+			}
+			handleConsumeMessage()
+		case "CREATE_TOPIC":
+			if len(parts) < 3 {
+				log.Printf("Invalid CREATE_TOPIC command: %s", line)
+				continue
+			}
+			handleCreateTopic()
+		case "ADDBROKER":
+			handleAddBroker()
+		case "REMOVEBROKER":
+			handleRemoveBroker()
 		default:
 			log.Printf("Unknown command: %s", parts[0])
 		}
