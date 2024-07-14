@@ -10,16 +10,16 @@ import (
 )
 
 func main() {
-	fmt.Println("Starting Core Service...")
+	fmt.Println("Starting Message Queue Server (Core Service)...")
 
-	zkClient, err := zookeeper_client.NewZookeeperClient("127.0.0.1:2181", ".\\logs")
+	zkClient, err := zookeeper_client.NewZookeeperClient("127.0.0.1:2181", "./logs")
 	if err != nil {
 		log.Fatalf("Failed to connect to Zookeeper: %v", err)
 	}
 	defer zkClient.Close()
 
 	// Initialize WAL
-	wal, err := wal.NewWAL(".\\data")
+	wal, err := wal.NewWAL("./data")
 	if err != nil {
 		log.Fatalf("Failed to initialize WAL: %v", err)
 	}
