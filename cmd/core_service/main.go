@@ -6,10 +6,27 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 
+	"github.com/shubhamojha1/simplemq/pkg/broker"
 	"github.com/shubhamojha1/simplemq/pkg/wal"
 	"github.com/shubhamojha1/simplemq/pkg/zookeeper_client"
 )
+
+type BrokerManager struct {
+	brokers  map[string]*broker.Broker
+	zkClient *zookeeper_client.ZookeeperClient
+	wal      *wal.WAL
+	mu       sync.Mutex
+}
+
+func NewBrokerManager(zkClient *zookeeper_client.ZookeeperClient, wal *wal.WAL) *BrokerManager {
+	return &BrokerManager{
+		brokers:  make(map[string]*broker.Broker),
+		zkClient: zkClient,
+		wal:      wal,
+	}
+}
 
 func main() {
 	fmt.Println("Starting Message Queue Server (Core Service)...")
