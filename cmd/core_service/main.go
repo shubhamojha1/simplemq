@@ -114,9 +114,26 @@ func main() {
 		log.Fatalf("Failed to add initial broker: %v", err)
 	}
 
+	listener, err := net.Listen("tcp", ":9092")
+	if err != nil {
+		log.Fatalf("Failed to establish TCP listener: %v", err)
+	}
+	defer listener.Close()
+
+	fmt.Println("Message Queue Server Running...")
+
+	for {
+		conn, err := listener.Accept()
+		if err == nil {
+			go handleConnection(conn, brokerManager)
+		} else {
+			log.Printf("Error acception connection: %v", err)
+		}
+	}
+
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, bm *BrokerManager) {
 	defer conn.Close()
 	scanner := bufio.NewScanner(conn)
 
