@@ -158,17 +158,17 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 				log.Printf("Invalid CONSUME command: %s", line)
 				continue
 			}
-			handleConsumeMessage()
+			handleConsumeMessage(conn, bm, parts[1], parts[2], parts[3])
 		case "CREATE_TOPIC":
 			if len(parts) < 3 {
 				log.Printf("Invalid CREATE_TOPIC command: %s", line)
 				continue
 			}
-			handleCreateTopic()
+			handleCreateTopic(conn, bm, parts[1], parts[2])
 		case "ADDBROKER":
-			handleAddBroker()
+			handleAddBroker(conn, bm, parts[1])
 		case "REMOVEBROKER":
-			handleRemoveBroker()
+			handleRemoveBroker(conn, bm, parts[1])
 		default:
 			log.Printf("Unknown command: %s", parts[0])
 		}
@@ -197,7 +197,7 @@ func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, par
 	}
 }
 
-func handleConsumeMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, partitionIDStr string, message []byte) {
+func handleConsumeMessage(conn net.Conn, bm *BrokerManager, consumerID, topic, partitionIDStr string) {
 	partitionID, err := strconv.Atoi(partitionIDStr)
 	if err != nil {
 		fmt.Fprintf(conn, "ERROR: Invalid partition ID: %v\n", err)
@@ -244,4 +244,22 @@ func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr st
 		}
 	}
 	fmt.Fprintf(conn, "OK: Topic %s created with %d partitions\n", topic, partitions)
+}
+
+func handleAddBroker(conn net.Conn, bm *BrokerManager, id string) {
+	err := bm.AddBroker(id)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Failed to add broker: %v\n", err)
+	} else {
+		fmt.Fprintf(conn, "OK: Broker %s added\n", id)
+	}
+}
+
+func handleRemoveBroker(conn net.Conn, bm *BrokerManager, id string) {
+	err := bm.RemoveBroker(id)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Failed to remove broker: %v\n", err)
+	} else {
+		fmt.Fprintf(conn, "OK: Broker %s removed\n", id)
+	}
 }
