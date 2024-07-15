@@ -115,6 +115,8 @@ func main() {
 		log.Fatalf("Failed to add initial broker: %v", err)
 	}
 
+	config, err := readConfigFile()
+
 	listener, err := net.Listen("tcp", ":9092")
 	if err != nil {
 		log.Fatalf("Failed to establish TCP listener: %v", err)
