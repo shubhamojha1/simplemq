@@ -76,7 +76,11 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 }
 
 func updateConfigFile(config BrokerConfig) error {
-
+	data, err := json.MarshalIndent(config, "", " ")
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(configFilePath, data, 0644)
 }
 
 func readConfigFile() (BrokerConfig, error) {
@@ -138,15 +142,17 @@ func main() {
 		log.Fatalf("Failed to read config file: %v", err)
 	}
 
-	adjustBrokerCount(brokerManager, config.BrokerCount)
-
 	brokerManager := NewBrokerManager(zkClient, wal)
 
+	adjustBrokerCount(brokerManager, config.BrokerCount)
+
+	startManagementAPI(brokerManager)
+
 	// Add initial broker
-	err = brokerManager.AddBroker("broker1")
-	if err != nil {
-		log.Fatalf("Failed to add initial broker: %v", err)
-	}
+	// err = brokerManager.AddBroker("broker1")
+	// if err != nil {
+	// 	log.Fatalf("Failed to add initial broker: %v", err)
+	// }
 
 	listener, err := net.Listen("tcp", ":9092")
 	if err != nil {
