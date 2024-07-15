@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -151,7 +152,7 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 				log.Printf("Invalid PRODUCE command: %s", line)
 				continue
 			}
-			handleProduceMessage()
+			handleProduceMessage(conn, bm, parts[1], parts[2], parts[3], []byte(parts[4]))
 		case "CONSUME":
 			if len(parts) < 4 {
 				log.Printf("Invalid CONSUME command: %s", line)
@@ -174,16 +175,24 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 	}
 }
 
-func handleSendMessage(conn net.Conn, topic string, message string) {
-	// Logic to send message to the broker, which then forwards it to the appropriate partition
-	// Simplified: Directly print to connection for demonstration
-	fmt.Fprintf(conn, "OK\n")
-}
+func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, partitionIDStr string, message []byte) {
+	brk, exists := bm.brokers[brokerID]
+	if !exists {
+		fmt.Println(conn, "ERROR: Broker %s (%s) does not exist\n", brokerID, brk)
+		return
+	}
 
-func handleSubscribe(conn net.Conn, topic string) {
-	// Logic to subscribe to a topic and start sending messages to the consumer once available
-	// Simplified: Keep connection open and continuously send messages
-	for {
-		fmt.Fprintf(conn, "message\n") // Example message sending loop
+	partitionID, err := strconv.Atoi(partitionIDStr)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Invalid partition ID: %v\n", err)
+		return
+	}
+
+	err = bm.wal.Append(topic, partitionID, message)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Failed to write to WAL: %v\n", err)
+		return
+	} else {
+		fmt.Fprintf(conn, "OK: Message produced to topic %s, partition %d\n", topic, partitionID)
 	}
 }
