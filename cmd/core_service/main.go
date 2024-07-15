@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +23,12 @@ type BrokerManager struct {
 	wal      *wal.WAL
 	mu       sync.Mutex
 }
+
+type BrokerConfig struct {
+	BrokerCount int `json:"broker_count"`
+}
+
+const configFilePath = "./broker_config.json"
 
 func NewBrokerManager(zkClient *zookeeper_client.ZookeeperClient, wal *wal.WAL) *BrokerManager {
 	return &BrokerManager{
@@ -66,6 +75,23 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 	return nil
 }
 
+func updateConfigFile(config BrokerConfig) error {
+
+}
+
+func readConfigFile() (BrokerConfig, error) {
+	var config BrokerConfig
+	data, err := ioutil.ReadFile(configFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return BrokerConfig{BrokerCount: 1}, nil
+		}
+		return config, err
+	}
+	err = json.Unmarshal(data, &config)
+	return config, err
+}
+
 func main() {
 	fmt.Println("Starting Message Queue Server (Core Service)...")
 
@@ -107,6 +133,13 @@ func main() {
 	// fmt.Println("Message Queue Server runnning...")
 	// select {}
 
+	config, err := readConfigFile()
+	if err != nil {
+		log.Fatalf("Failed to read config file: %v", err)
+	}
+
+	adjustBrokerCount(brokerManager, config.BrokerCount)
+
 	brokerManager := NewBrokerManager(zkClient, wal)
 
 	// Add initial broker
@@ -114,8 +147,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to add initial broker: %v", err)
 	}
-
-	config, err := readConfigFile()
 
 	listener, err := net.Listen("tcp", ":9092")
 	if err != nil {
