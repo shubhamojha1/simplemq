@@ -214,9 +214,22 @@ func (z *ZookeeperClient) UpdateBrokerHeartBeat(brokerID string) error {
 	heartbeatPath := fmt.Sprintf("%s/%s/heartbeat", brokerPath, brokerID)
 	heartbeatValue := []byte(time.Now().String())
 
-	// Update the heartbeat in Zookeeper
-	_, err := z.conn.Set(heartbeatPath, heartbeatValue, 0)
+	// Check if heartbeat node exists
+	exists, _, err := z.conn.Exists(heartbeatPath)
 	if err != nil {
+		return fmt.Errorf("failed to check existence of heartbeat node: %v", err)
+	}
+	if !exists {
+		// Node doesnt exist. Create it
+		_, err := z.conn.Create(heartbeatPath, heartbeatValue, 0, zk.WorldACL(zk.PermAll))
+		if err != nil && err != zk.ErrNodeExists {
+			return fmt.Errorf("failed to create heartbeat node: %v", err)
+		}
+	}
+
+	// Update the heartbeat in Zookeeper
+	_, err = z.conn.Set(heartbeatPath, heartbeatValue, -1) // 0 OR another number -> requires that the node;s current version amtches the specifief version exactly.
+	if err != nil {                                        // -1 -> ignores version check and updates the nodes regardless of its current version.
 		return fmt.Errorf("failed to update broker heartbeat: %v", err)
 	}
 
