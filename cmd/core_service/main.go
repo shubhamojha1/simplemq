@@ -371,7 +371,7 @@ func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr st
 	}
 
 	// Create topic on all brokers
-	// (in a real system, you'd distribute partitions across brokers)
+	// (in a real system, you'd distribute partitions across brokers).
 
 	for _, brk := range bm.brokers {
 		err := brk.CreateTopic(topic, partitions)
