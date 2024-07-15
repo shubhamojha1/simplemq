@@ -75,6 +75,21 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 	return nil
 }
 
+func startManagementAPI()
+
+func adjustBrokerCount(bm *BrokerManager, desiredCount int) {
+	currentCount := len(bm.brokers)
+	if desiredCount > currentCount {
+		for i := 0; i < desiredCount-currentCount; i++ {
+			bm.AddBroker(generateNewBrokerID())
+		}
+	} else if desiredCount < currentCount {
+		for i := 0; i < currentCount-desiredCount; i++ {
+			bm.RemoveBroker(selectBrokerToRemove())
+		}
+	}
+}
+
 func updateConfigFile(config BrokerConfig) error {
 	data, err := json.MarshalIndent(config, "", " ")
 	if err != nil {
