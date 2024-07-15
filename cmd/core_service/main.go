@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -75,7 +76,26 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 	return nil
 }
 
-func startManagementAPI()
+func startManagementAPI(bm *BrokerManager) {
+	http.HandleFunc("/brokers", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(BrokerConfig{BrokerCount: len(bm.brokers)})
+		case http.MethodPost:
+			var config BrokerConfig
+			if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			adjustBrokerCount(bm, config.BrokerCount)
+			updateConfigFile(config)
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	go http.ListenAndServe(":8080", nil)
+}
 
 func adjustBrokerCount(bm *BrokerManager, desiredCount int) {
 	currentCount := len(bm.brokers)
