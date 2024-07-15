@@ -196,3 +196,26 @@ func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, par
 		fmt.Fprintf(conn, "OK: Message produced to topic %s, partition %d\n", topic, partitionID)
 	}
 }
+
+func handleConsumeMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, partitionIDStr string, message []byte) {
+	partitionID, err := strconv.Atoi(partitionIDStr)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Invalid partition ID: %v\n", err)
+		return
+	}
+
+	messages, err := bm.wal.Read(topic, partitionID)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Failed to read from WAL: %v\n", err)
+		return
+	}
+
+	if len(messages) == 0 {
+		fmt.Fprintf(conn, "No messages available for topic %s, partition %d\n", topic, partitionID)
+		return
+	}
+
+	for _, message := range messages {
+		fmt.Fprintf(conn, "Message: %s\n", string(message))
+	}
+}
