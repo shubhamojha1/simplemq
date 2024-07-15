@@ -219,3 +219,29 @@ func handleConsumeMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, par
 		fmt.Fprintf(conn, "Message: %s\n", string(message))
 	}
 }
+
+func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr string) {
+	partitions, err := strconv.Atoi(partitionsStr)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Invalid partition count\n")
+		return
+	}
+
+	err = bm.zkClient.RegisterTopic(topic, partitions)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Failed to create topic: %v\n", err)
+		return
+	}
+
+	// Create topic on all brokers
+	// (in a real system, you'd distribute partitions across brokers)
+
+	for _, brk := range bm.brokers {
+		err := brk.CreateTopic(topic, partitions)
+		if err != nil {
+			fmt.Fprintf(conn, "ERROR: Failed to create topic on broker %s: %v\n", brk.ID, err)
+			return
+		}
+	}
+	fmt.Fprintf(conn, "OK: Topic %s created with %d partitions\n", topic, partitions)
+}
