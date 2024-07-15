@@ -43,7 +43,8 @@ func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
 		keep the same session. This is means any ephemeral nodes and watches are maintained.
 	*/
 
-	walFilePath := filepath.Join(walDir, "wal.log")
+	// walFilePath := filepath.Join(walDir, "wal.log")
+	walFilePath := fmt.Sprintf(walDir + "./wal.log")
 	err = os.MkdirAll(filepath.Dir(walFilePath), 0755)
 
 	if err != nil {
@@ -154,7 +155,10 @@ func (z *ZookeeperClient) RegisterTopic(topicName string, partitionCount int) er
 	// log.Printf("Registering topic %s with %d partitions to broker %s...", topicName, partitionCount, brokerName)
 	// Actual Zookeeper operation to register the topic and assign it to a broker goes here
 
-	topicPath := filepath.Join(topicPath, topicName)
+	// topicPath := filepath.Join(topicPath, topicName)
+	// topicPath := fmt.Sprintf(topicPath+"./%s", topicName)
+	topicPath := fmt.Sprintf("%s/%s", topicPath, topicName)
+
 	data := []byte(fmt.Sprintf("%d", partitionCount))
 	_, err := z.conn.Create(topicPath, data, 0, zk.WorldACL(zk.PermAll))
 	if err != nil {
@@ -205,8 +209,9 @@ func (z *ZookeeperClient) ReadWAL() ([][]byte, error) {
 }
 
 func (z *ZookeeperClient) UpdateBrokerHeartBeat(brokerID string) error {
-	heartbeatPath := filepath.Join(brokerPath, brokerID, "heartbeat")
+	// heartbeatPath := filepath.Join(brokerPath, brokerID, "heartbeat")
 
+	heartbeatPath := fmt.Sprintf("%s/%s/heartbeat", brokerPath, brokerID)
 	heartbeatValue := []byte(time.Now().String())
 
 	// Update the heartbeat in Zookeeper

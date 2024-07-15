@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shubhamojha1/simplemq/pkg/broker"
 	"github.com/shubhamojha1/simplemq/pkg/wal"
@@ -44,7 +47,7 @@ func (bm *BrokerManager) AddBroker(id string) error {
 	defer bm.mu.Unlock()
 
 	if _, exists := bm.brokers[id]; exists {
-		return fmt.Errorf("broker %s already exists")
+		return fmt.Errorf("broker %s already exists", id)
 	}
 
 	brk := broker.NewBroker(id, bm.zkClient, bm.wal)
@@ -76,8 +79,58 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 	return nil
 }
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+func generateNewBrokerID() string {
+	timestamp := time.Now().UnixNano()
+	randomPart := rand.Intn(1000)
+	return fmt.Sprintf("broker_%d_%d", timestamp, randomPart)
+}
+
+func (bm *BrokerManager) selectBrokerToRemove() string {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	if len(bm.brokers) == 0 {
+		return ""
+	}
+
+	brokerIDs := make([]string, 0, len(bm.brokers))
+	for id := range bm.brokers {
+		brokerIDs = append(brokerIDs, id)
+	}
+
+	sort.Strings(brokerIDs)
+
+	return brokerIDs[len(brokerIDs)-1]
+}
+
+// func startManagementAPI(bm *BrokerManager) {
+// 	http.HandleFunc("/brokers", func(w http.ResponseWriter, r *http.Request) {
+// 		switch r.Method {
+// 		case http.MethodGet:
+// 			json.NewEncoder(w).Encode(BrokerConfig{BrokerCount: len(bm.brokers)})
+// 		case http.MethodPost:
+// 			var config BrokerConfig
+// 			if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+// 				http.Error(w, err.Error(), http.StatusBadRequest)
+// 				return
+// 			}
+// 			adjustBrokerCount(bm, config.BrokerCount)
+// 			updateConfigFile(config)
+// 			w.WriteHeader(http.StatusOK)
+// 		default:
+// 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+// 		}
+// 	})
+// 	go http.ListenAndServe(":8080", nil)
+// }
+
 func startManagementAPI(bm *BrokerManager) {
 	http.HandleFunc("/brokers", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Received request: %s %s", r.Method, r.URL.Path)
 		switch r.Method {
 		case http.MethodGet:
 			json.NewEncoder(w).Encode(BrokerConfig{BrokerCount: len(bm.brokers)})
@@ -94,7 +147,12 @@ func startManagementAPI(bm *BrokerManager) {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	go http.ListenAndServe(":8080", nil)
+	log.Printf("Starting management API on :8081")
+	go func() {
+		if err := http.ListenAndServe(":8081", nil); err != nil {
+			log.Fatalf("Failed to start management API: %v", err)
+		}
+	}()
 }
 
 func adjustBrokerCount(bm *BrokerManager, desiredCount int) {
@@ -105,7 +163,7 @@ func adjustBrokerCount(bm *BrokerManager, desiredCount int) {
 		}
 	} else if desiredCount < currentCount {
 		for i := 0; i < currentCount-desiredCount; i++ {
-			bm.RemoveBroker(selectBrokerToRemove())
+			bm.RemoveBroker(bm.selectBrokerToRemove())
 		}
 	}
 }
@@ -252,7 +310,7 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, partitionIDStr string, message []byte) {
 	brk, exists := bm.brokers[brokerID]
 	if !exists {
-		fmt.Println(conn, "ERROR: Broker %s (%s) does not exist\n", brokerID, brk)
+		fmt.Fprintf(conn, "ERROR: Broker %s does not exist\n", brokerID)
 		return
 	}
 
@@ -266,6 +324,11 @@ func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, par
 	if err != nil {
 		fmt.Fprintf(conn, "ERROR: Failed to write to WAL: %v\n", err)
 		return
+	}
+
+	err = brk.ProduceMessage(topic, message)
+	if err != nil {
+		fmt.Fprintf(conn, "ERROR: Failed to produce message: %v\n", err)
 	} else {
 		fmt.Fprintf(conn, "OK: Message produced to topic %s, partition %d\n", topic, partitionID)
 	}
