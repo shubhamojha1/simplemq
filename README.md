@@ -38,3 +38,17 @@ simplemq/
 └── README.md              # Project documentation
 
 ```
+
+## Commands
+- Start Message Queue Server: go run ./cmd/core_service/main.go
+- Send commands to the server: nc localhost 9092 | telnet localhost 9092
+- Create Topic: CREATE_TOPIC|mytopic|3
+- Produce a Message: PRODUCE|broker1|mytopic|0|Hello, World!
+- Consume a Message: CONSUME|consumer1|mytopic|0
+- Add a Broker: ADDBROKER|broker2
+- Remove a Broker: REMOVEBROKER|broker2
+- For Management API: 
+    a. Get current broker count: curl http://localhost:8081/brokers
+    b. Update broker count: curl -X POST -H "Content-Type: application/json" -d '{"broker_count": 3}' http://localhost:8081/brokers 
+                                                                        OR 
+                            Invoke-WebRequest -Uri http://localhost:8081/brokers -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"broker_count": 3}'
