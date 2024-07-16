@@ -150,6 +150,24 @@ func (z *ZookeeperClient) RegisterBroker(brokerID string) error {
 	return nil
 }
 
+func (z *ZookeeperClient) DeleteBroker(brokerID string) error {
+	brokerPath := fmt.Sprintf("/simplemq/brokers/%s", brokerID)
+	err := z.conn.Delete(brokerPath, -1)
+	if err != nil && err != zk.ErrNodeExists {
+		return fmt.Errorf("failed to delete broker %s: %v", brokerID, err)
+	}
+	return nil
+}
+
+func (z *ZookeeperClient) DeleteHeartBeat(brokerID string) error {
+	heartbeatPath := fmt.Sprintf("/simplemq/brokers/%s/heartbeat", brokerID)
+	err := z.conn.Delete(heartbeatPath, -1)
+	if err != nil && err != zk.ErrNodeExists {
+		return fmt.Errorf("failed to delete heartbear for broker %s: %v", brokerID, err)
+	}
+	return nil
+}
+
 func (z *ZookeeperClient) RegisterTopic(topicName string, partitionCount int) error {
 	// Implement registration of a topic and assignment to a broker in Zookeeper
 	// log.Printf("Registering topic %s with %d partitions to broker %s...", topicName, partitionCount, brokerName)

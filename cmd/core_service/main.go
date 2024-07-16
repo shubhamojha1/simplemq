@@ -271,6 +271,12 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 	scanner := bufio.NewScanner(conn)
 
 	for scanner.Scan() {
+
+		if err := scanner.Err(); err != nil {
+			log.Printf("Scanner error: %v", err)
+			break
+		}
+
 		line := scanner.Text()
 		parts := strings.SplitN(line, "|", 5)
 		if len(parts) < 2 {

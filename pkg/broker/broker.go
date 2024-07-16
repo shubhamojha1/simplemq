@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-zookeeper/zk"
 	"github.com/shubhamojha1/simplemq/pkg/wal"
 	"github.com/shubhamojha1/simplemq/pkg/zookeeper_client"
 )
@@ -19,9 +20,10 @@ type Broker struct {
 	topics       map[string][]int
 	partitions   map[int]*Partition
 	consumers    map[string]*Consumer
-	producerLock sync.RWMutex
-	consumerLock sync.RWMutex
+	producerLock sync.RWMutex // For protecting write operations on topics and partitions
+	consumerLock sync.RWMutex // For protecting consumer operations
 	shutdownCh   chan struct{}
+	mu           sync.Mutex
 }
 
 type Partition struct {
@@ -81,8 +83,23 @@ func (b *Broker) Start() error {
 }
 
 func (b *Broker) Stop() error {
+	b.mu.Lock()
+	defer b.mu.Lock()
+
+	// heartbeatPath := fmt.Sprintf("%s/%s/heartbeat", zookeeper_client.brokerPath)
+	err := b.zkClient.DeleteHeartBeat(b.ID)
+	if err != nil && err != zk.ErrNodeExists {
+		log.Printf("Failed to delete heartbeat for broker %s from Zookeeper: %v", b.ID, err)
+		return err
+	}
+
+	err = b.zkClient.DeleteBroker(b.ID)
+	if err != nil {
+		log.Printf("Failed to delete broker %s from Zookeeper: %v", b.ID, err)
+	}
 	close(b.shutdownCh)
 	// cleanup operations, unregister from Zookeeper, close connections, etc.
+	log.Printf("Broker %s stopped successfully", b.ID)
 	return nil
 }
 
