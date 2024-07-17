@@ -65,17 +65,22 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
+	log.Printf("RemoveBroker: Attempting to remove broker %s", id)
+
 	brk, exists := bm.brokers[id]
 	if !exists {
+		log.Printf("RemoveBroker: Broker %s does not exist", id)
 		return fmt.Errorf("broker %s does not exist", id)
 	}
 
 	err := brk.Stop()
 	if err != nil {
+		log.Printf("RemoveBroker: Failed to stop broker %s: %v", id, err)
 		return fmt.Errorf("failed to stop broker %s: %v", id, err)
 	}
 
 	delete(bm.brokers, id)
+	log.Printf("RemoveBroker: Successfully removed broker %s", id)
 	return nil
 }
 
@@ -272,108 +277,117 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 
 	for scanner.Scan() {
 
-		if err := scanner.Err(); err != nil {
-			log.Printf("Scanner error: %v", err)
-			break
-		}
-
+		// if err := scanner.Err(); err != nil {
+		// 	log.Printf("Scanner error: %v", err)
+		// 	break
+		// }
+		// *********************************
 		line := scanner.Text()
 		parts := strings.SplitN(line, "|", 5)
 		if len(parts) < 2 {
 			log.Printf("Invalid command: %s", line)
 			continue
 		}
-
+		var err error
 		switch parts[0] {
 		case "PRODUCE":
 			if len(parts) < 5 {
-				log.Printf("Invalid PRODUCE command: %s", line)
+				fmt.Fprintf(conn, "ERROR: Invalid PRODUCE command\n")
 				continue
 			}
-			handleProduceMessage(conn, bm, parts[1], parts[2], parts[3], []byte(parts[4]))
+			err = handleProduceMessage(conn, bm, parts[1], parts[2], parts[3], []byte(parts[4]))
 		case "CONSUME":
 			if len(parts) < 4 {
-				log.Printf("Invalid CONSUME command: %s", line)
+				fmt.Fprintf(conn, "ERROR: Invalid CONSUME command\n")
 				continue
 			}
-			handleConsumeMessage(conn, bm, parts[1], parts[2], parts[3])
+			err = handleConsumeMessage(conn, bm, parts[1], parts[2], parts[3])
 		case "CREATE_TOPIC":
 			if len(parts) < 3 {
-				log.Printf("Invalid CREATE_TOPIC command: %s", line)
+				fmt.Fprintf(conn, "ERROR: Invalid CREATE_TOPIC command\n")
 				continue
 			}
-			handleCreateTopic(conn, bm, parts[1], parts[2])
+			err = handleCreateTopic(conn, bm, parts[1], parts[2])
 		case "ADDBROKER":
-			handleAddBroker(conn, bm, parts[1])
+			err = handleAddBroker(conn, bm, parts[1])
 		case "REMOVEBROKER":
-			handleRemoveBroker(conn, bm, parts[1])
+			if len(parts) < 2 {
+				fmt.Fprintf(conn, "ERROR: Invalid REMOVEBROKER command\n")
+				continue
+			}
+			err = handleRemoveBroker(conn, bm, parts[1])
 		default:
-			log.Printf("Unknown command: %s", parts[0])
+			fmt.Fprintf(conn, "ERROR: Unknown command: %s\n", parts[0])
 		}
+
+		if err != nil {
+			log.Printf("Error handling command: %v", err)
+			fmt.Fprintf(conn, "ERROR: %v\n", err)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Scanner error: %v", err)
 	}
 }
 
-func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, partitionIDStr string, message []byte) {
+func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, partitionIDStr string, message []byte) error {
 	brk, exists := bm.brokers[brokerID]
 	if !exists {
-		fmt.Fprintf(conn, "ERROR: Broker %s does not exist\n", brokerID)
-		return
+		return fmt.Errorf("ERROR: Broker %s does not exist", brokerID)
 	}
 
 	partitionID, err := strconv.Atoi(partitionIDStr)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Invalid partition ID: %v\n", err)
-		return
+		return fmt.Errorf("invalid partition ID: %v", err)
 	}
 
 	err = bm.wal.Append(topic, partitionID, message)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Failed to write to WAL: %v\n", err)
-		return
+		return fmt.Errorf("failed to write to WAL: %v", err)
 	}
 
 	err = brk.ProduceMessage(topic, message)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Failed to produce message: %v\n", err)
-	} else {
-		fmt.Fprintf(conn, "OK: Message produced to topic %s, partition %d\n", topic, partitionID)
+		return fmt.Errorf("Failed to produce message: %v", err)
 	}
+
+	fmt.Fprintf(conn, "OK: Message produced to topic %s, partition %d\n", topic, partitionID)
+	return nil
+
 }
 
-func handleConsumeMessage(conn net.Conn, bm *BrokerManager, consumerID, topic, partitionIDStr string) {
+func handleConsumeMessage(conn net.Conn, bm *BrokerManager, consumerID, topic, partitionIDStr string) error {
 	partitionID, err := strconv.Atoi(partitionIDStr)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Invalid partition ID: %v\n", err)
-		return
+		return fmt.Errorf("Invalid partition ID: %v", err)
 	}
 
 	messages, err := bm.wal.Read(topic, partitionID)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Failed to read from WAL: %v\n", err)
-		return
+		return fmt.Errorf("Failed to read from WAL: %v", err)
 	}
 
 	if len(messages) == 0 {
 		fmt.Fprintf(conn, "No messages available for topic %s, partition %d\n", topic, partitionID)
-		return
+		return nil
 	}
 
 	for _, message := range messages {
 		fmt.Fprintf(conn, "Message: %s\n", string(message))
 	}
+	return nil
 }
 
-func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr string) {
+func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr string) error {
 	partitions, err := strconv.Atoi(partitionsStr)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Invalid partition count\n")
-		return
+		return fmt.Errorf("Invalid partition count")
 	}
 
 	err = bm.zkClient.RegisterTopic(topic, partitions)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Failed to create topic: %v\n", err)
-		return
+		return fmt.Errorf("Failed to create topic: %v", err)
 	}
 
 	// Create topic on all brokers
@@ -382,27 +396,44 @@ func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr st
 	for _, brk := range bm.brokers {
 		err := brk.CreateTopic(topic, partitions)
 		if err != nil {
-			fmt.Fprintf(conn, "ERROR: Failed to create topic on broker %s: %v\n", brk.ID, err)
-			return
+			return fmt.Errorf("Failed to create topic on broker %s: %v", brk.ID, err)
 		}
 	}
 	fmt.Fprintf(conn, "OK: Topic %s created with %d partitions\n", topic, partitions)
+	return nil
 }
 
-func handleAddBroker(conn net.Conn, bm *BrokerManager, id string) {
+func handleAddBroker(conn net.Conn, bm *BrokerManager, id string) error {
 	err := bm.AddBroker(id)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Failed to add broker: %v\n", err)
-	} else {
-		fmt.Fprintf(conn, "OK: Broker %s added\n", id)
+		return fmt.Errorf("Failed to add broker: %v", err)
 	}
+	fmt.Fprintf(conn, "OK: Broker %s added\n", id)
+	return nil
 }
 
-func handleRemoveBroker(conn net.Conn, bm *BrokerManager, id string) {
+func handleRemoveBroker(conn net.Conn, bm *BrokerManager, id string) error {
+	log.Printf("Attempting to remove broker %s", id)
 	err := bm.RemoveBroker(id)
 	if err != nil {
-		fmt.Fprintf(conn, "ERROR: Failed to remove broker: %v\n", err)
-	} else {
-		fmt.Fprintf(conn, "OK: Broker %s removed\n", id)
+		log.Printf("Error removing broker %s: %v", id, err)
+		return fmt.Errorf("Failed to remove broker: %v", err)
 	}
+
+	log.Printf("Successfully removed broker %s", id)
+	// } else {
+
+	// fmt.Fprintf(conn, "OK: Broker %s removed\n", id)
+	// return nil
+
+	// }
+	// log.Printf("Finished handling REMOVEBROKER command for broker %s", id)
+	// Ensure we're writing the response to the connection
+	_, writeErr := fmt.Fprintf(conn, "OK: Broker %s removed\n", id)
+	if writeErr != nil {
+		log.Printf("Error writing response to connection: %v", writeErr)
+		return fmt.Errorf("Error sending response: %v", writeErr)
+	}
+
+	return nil
 }

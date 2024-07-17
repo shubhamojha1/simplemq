@@ -84,18 +84,21 @@ func (b *Broker) Start() error {
 
 func (b *Broker) Stop() error {
 	b.mu.Lock()
-	defer b.mu.Lock()
+	defer b.mu.Unlock()
+
+	log.Printf("Stopping broker %s", b.ID)
 
 	// heartbeatPath := fmt.Sprintf("%s/%s/heartbeat", zookeeper_client.brokerPath)
 	err := b.zkClient.DeleteHeartBeat(b.ID)
-	if err != nil && err != zk.ErrNodeExists {
+	if err != nil && err != zk.ErrNoNode {
 		log.Printf("Failed to delete heartbeat for broker %s from Zookeeper: %v", b.ID, err)
 		return err
 	}
 
 	err = b.zkClient.DeleteBroker(b.ID)
-	if err != nil {
+	if err != nil && err != zk.ErrNoNode {
 		log.Printf("Failed to delete broker %s from Zookeeper: %v", b.ID, err)
+		return err
 	}
 	close(b.shutdownCh)
 	// cleanup operations, unregister from Zookeeper, close connections, etc.
