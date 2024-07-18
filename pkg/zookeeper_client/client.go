@@ -75,8 +75,12 @@ func NewZookeeperClient(address, walDir string) (*ZookeeperClient, error) {
 	return client, nil
 }
 
-func (z *ZookeeperClient) Close() {
+func (z *ZookeeperClient) Close() error {
+	if z.conn == nil {
+		return fmt.Errorf("zookeeper connection is nil")
+	}
 	z.conn.Close()
+	return nil
 }
 
 func (z *ZookeeperClient) createPathIfNotExist(path string) error {

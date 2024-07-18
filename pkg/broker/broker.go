@@ -85,6 +85,7 @@ func (b *Broker) Start() error {
 func (b *Broker) Stop() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	// add code for appending to WAL
 
 	log.Printf("Stopping broker %s", b.ID)
 

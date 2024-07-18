@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -246,11 +247,8 @@ func main() {
 
 	startManagementAPI(brokerManager)
 
-	// Add initial broker
-	// err = brokerManager.AddBroker("broker1")
-	// if err != nil {
-	// 	log.Fatalf("Failed to add initial broker: %v", err)
-	// }
+	shutdownCh := make(chan struct{})
+	errorCh := make(chan error, 1)
 
 	listener, err := net.Listen("tcp", ":9092")
 	if err != nil {
@@ -260,18 +258,76 @@ func main() {
 
 	fmt.Println("Message Queue Server Running...")
 
-	for {
-		conn, err := listener.Accept()
-		if err == nil {
-			go handleConnection(conn, brokerManager)
-		} else {
-			log.Printf("Error acception connection: %v", err)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				select {
+				case <-shutdownCh:
+					return
+				default:
+					log.Printf("Error accepting conneciton: %v", err)
+					errorCh <- fmt.Errorf("listener error: %v", err)
+					continue
+				}
+			}
+			// go handleConnection(conn, brokerManager, shutdownCh)
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("Recovered from panic in handleConnection: %v", r)
+					}
+				}()
+				handleConnection(conn, brokerManager, shutdownCh)
+			}()
 		}
+	}()
+
+	log.Println("Server running. Send SHUTDOWN command to stop.")
+
+	// wait for shutdown signal or error
+	select {
+	case <-shutdownCh:
+		log.Println("Shutting down server...")
+	case err := <-errorCh:
+		log.Printf("Server error: %v", err)
 	}
 
+	// creating context for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	shutdownComplete := make(chan struct{})
+	go func() {
+		// Stop all brokers
+		for id, broker := range brokerManager.brokers {
+			log.Printf("Stopping broker %s", id)
+			if err := broker.Stop(); err != nil {
+				log.Printf("Error stopping broker %s: %v", id, err)
+			}
+		}
+		// Close listener
+		if err := listener.Close(); err != nil {
+			log.Printf("Error closing TCP listener: %v", err)
+		}
+		time.Sleep(2 * time.Second) // Allow ongoing operations to complete
+		// Close ZK
+		log.Printf("Closing Zookeeper connection...")
+		if err := zkClient.Close(); err != nil {
+			log.Printf("Error closing Zookeeper connection: %v", err)
+		}
+		close(shutdownComplete)
+	}()
+
+	select {
+	case <-shutdownComplete:
+		log.Println("Server shutdown complete")
+	case <-ctx.Done():
+		log.Println("Shutdown timed out, forcing exit")
+	}
 }
 
-func handleConnection(conn net.Conn, bm *BrokerManager) {
+func handleConnection(conn net.Conn, bm *BrokerManager, shutdownCh chan<- struct{}) {
 	defer conn.Close()
 	scanner := bufio.NewScanner(conn)
 
@@ -284,12 +340,17 @@ func handleConnection(conn net.Conn, bm *BrokerManager) {
 		// *********************************
 		line := scanner.Text()
 		parts := strings.SplitN(line, "|", 5)
-		if len(parts) < 2 {
+		if len(parts) < 1 {
 			log.Printf("Invalid command: %s", line)
 			continue
 		}
 		var err error
-		switch parts[0] {
+		command := strings.TrimSpace(parts[0])
+		switch command {
+		case "SHUTDOWN":
+			fmt.Fprintf(conn, "OK: Server shutdown initiated\n")
+			close(shutdownCh)
+			return
 		case "PRODUCE":
 			if len(parts) < 5 {
 				fmt.Fprintf(conn, "ERROR: Invalid PRODUCE command\n")
@@ -349,7 +410,7 @@ func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, par
 
 	err = brk.ProduceMessage(topic, message)
 	if err != nil {
-		return fmt.Errorf("Failed to produce message: %v", err)
+		return fmt.Errorf("failed to produce message: %v", err)
 	}
 
 	fmt.Fprintf(conn, "OK: Message produced to topic %s, partition %d\n", topic, partitionID)
@@ -360,12 +421,12 @@ func handleProduceMessage(conn net.Conn, bm *BrokerManager, brokerID, topic, par
 func handleConsumeMessage(conn net.Conn, bm *BrokerManager, consumerID, topic, partitionIDStr string) error {
 	partitionID, err := strconv.Atoi(partitionIDStr)
 	if err != nil {
-		return fmt.Errorf("Invalid partition ID: %v", err)
+		return fmt.Errorf("invalid partition ID: %v", err)
 	}
 
 	messages, err := bm.wal.Read(topic, partitionID)
 	if err != nil {
-		return fmt.Errorf("Failed to read from WAL: %v", err)
+		return fmt.Errorf("failed to read from WAL: %v", err)
 	}
 
 	if len(messages) == 0 {
@@ -382,12 +443,12 @@ func handleConsumeMessage(conn net.Conn, bm *BrokerManager, consumerID, topic, p
 func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr string) error {
 	partitions, err := strconv.Atoi(partitionsStr)
 	if err != nil {
-		return fmt.Errorf("Invalid partition count")
+		return fmt.Errorf("invalid partition count")
 	}
 
 	err = bm.zkClient.RegisterTopic(topic, partitions)
 	if err != nil {
-		return fmt.Errorf("Failed to create topic: %v", err)
+		return fmt.Errorf("failed to create topic: %v", err)
 	}
 
 	// Create topic on all brokers
@@ -396,7 +457,7 @@ func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr st
 	for _, brk := range bm.brokers {
 		err := brk.CreateTopic(topic, partitions)
 		if err != nil {
-			return fmt.Errorf("Failed to create topic on broker %s: %v", brk.ID, err)
+			return fmt.Errorf("failed to create topic on broker %s: %v", brk.ID, err)
 		}
 	}
 	fmt.Fprintf(conn, "OK: Topic %s created with %d partitions\n", topic, partitions)
@@ -406,7 +467,7 @@ func handleCreateTopic(conn net.Conn, bm *BrokerManager, topic, partitionsStr st
 func handleAddBroker(conn net.Conn, bm *BrokerManager, id string) error {
 	err := bm.AddBroker(id)
 	if err != nil {
-		return fmt.Errorf("Failed to add broker: %v", err)
+		return fmt.Errorf("failed to add broker: %v", err)
 	}
 	fmt.Fprintf(conn, "OK: Broker %s added\n", id)
 	return nil
@@ -417,22 +478,14 @@ func handleRemoveBroker(conn net.Conn, bm *BrokerManager, id string) error {
 	err := bm.RemoveBroker(id)
 	if err != nil {
 		log.Printf("Error removing broker %s: %v", id, err)
-		return fmt.Errorf("Failed to remove broker: %v", err)
+		return fmt.Errorf("failed to remove broker: %v", err)
 	}
 
 	log.Printf("Successfully removed broker %s", id)
-	// } else {
-
-	// fmt.Fprintf(conn, "OK: Broker %s removed\n", id)
-	// return nil
-
-	// }
-	// log.Printf("Finished handling REMOVEBROKER command for broker %s", id)
-	// Ensure we're writing the response to the connection
 	_, writeErr := fmt.Fprintf(conn, "OK: Broker %s removed\n", id)
 	if writeErr != nil {
 		log.Printf("Error writing response to connection: %v", writeErr)
-		return fmt.Errorf("Error sending response: %v", writeErr)
+		return fmt.Errorf("error sending response: %v", writeErr)
 	}
 
 	return nil
