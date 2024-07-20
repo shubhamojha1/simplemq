@@ -16,7 +16,7 @@ type Producer struct {
 	reconnectDelay time.Duration
 }
 
-func newProducer(addr string) *Producer {
+func NewProducer(addr string) *Producer {
 	return &Producer{
 		addr:           addr,
 		reconnectDelay: time.Second,
@@ -27,6 +27,31 @@ func (p *Producer) connect() error {
 	var err error
 	p.conn, err = net.Dial("tcp", p.addr)
 	return err
+}
+
+func (p *Producer) send(message string) (string, error) {
+	err := p.ensureConnected()
+	if err != nil {
+		return "", err
+	}
+
+	_, err = fmt.Fprintf(p.conn, "%s\n", message)
+	if err != nil {
+		p.conn.Close()
+		p.conn = nil
+		go p.reconnect()
+		return "", err
+	}
+
+	response, err := bufio.NewReader(p.conn).ReadString('\n')
+	if err != nil {
+		p.conn.Close()
+		p.conn = nil
+		go p.reconnect()
+		return "", err
+	}
+
+	return strings.TrimSpace(response), nil
 }
 
 func (p *Producer) Close() {
@@ -42,7 +67,7 @@ func main() {
 	}
 
 	serverAddr := os.Args[1]
-	producer := newProducer(serverAddr)
+	producer := NewProducer(serverAddr)
 
 	err := producer.connect()
 	if err != nil {
