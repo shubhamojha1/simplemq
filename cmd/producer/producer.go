@@ -1,4 +1,4 @@
-package producer
+package main
 
 import (
 	"bufio"
@@ -94,6 +94,11 @@ func (p *Producer) ProduceBatch(broker, topic string, partition int, messages []
 	return nil
 }
 
+func atoi(s string) int {
+	i, _ := strconv.Atoi(s)
+	return i
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: go run producer.go <server_address:port>")
@@ -146,9 +151,4 @@ func main() {
 			fmt.Println("Server response: ", response)
 		}
 	}
-}
-
-func atoi(s string) int {
-	i, _ := strconv.Atoi(s)
-	return i
 }
