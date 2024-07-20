@@ -29,6 +29,25 @@ func (p *Producer) connect() error {
 	return err
 }
 
+func (p *Producer) ensureConnected() error {
+	if p.conn != nil {
+		return nil
+	}
+	return p.connect()
+}
+
+func (p *Producer) reconnect() {
+	for {
+		err := p.connect()
+		if err == nil {
+			fmt.Println("Reconnected to server")
+			return
+		}
+		fmt.Printf("Failed to reconnect: %v. Retrying in %v\n", err, p.reconnectDelay)
+		time.Sleep(p.reconnectDelay)
+	}
+}
+
 func (p *Producer) send(message string) (string, error) {
 	err := p.ensureConnected()
 	if err != nil {
