@@ -79,6 +79,21 @@ func (p *Producer) Close() {
 	}
 }
 
+func (p *Producer) ProduceBatch(broker, topic string, partition int, messages []string) error {
+	batchMsg := fmt.Sprintf("PRODUCE_BATCH|%s|%s|%d|%d", broker, topic, partition, len(messages))
+	for _, msg := range messages {
+		batchMsg += "|" + msg
+	}
+
+	response, err := p.send(batchMsg)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Server response: ", response)
+	return nil
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: go run producer.go <server_address:port>")
