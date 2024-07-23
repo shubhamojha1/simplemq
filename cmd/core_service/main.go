@@ -133,27 +133,6 @@ func (bm *BrokerManager) selectBrokerToRemove() string {
 	return brokerIDs[len(brokerIDs)-1]
 }
 
-// func startManagementAPI(bm *BrokerManager) {
-// 	http.HandleFunc("/brokers", func(w http.ResponseWriter, r *http.Request) {
-// 		switch r.Method {
-// 		case http.MethodGet:
-// 			json.NewEncoder(w).Encode(BrokerConfig{BrokerCount: len(bm.brokers)})
-// 		case http.MethodPost:
-// 			var config BrokerConfig
-// 			if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
-// 				http.Error(w, err.Error(), http.StatusBadRequest)
-// 				return
-// 			}
-// 			adjustBrokerCount(bm, config.BrokerCount)
-// 			updateConfigFile(config)
-// 			w.WriteHeader(http.StatusOK)
-// 		default:
-// 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-// 		}
-// 	})
-// 	go http.ListenAndServe(":8080", nil)
-// }
-
 func startManagementAPI(bm *BrokerManager) {
 	http.HandleFunc("/brokers", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Received request: %s %s", r.Method, r.URL.Path)
@@ -498,6 +477,19 @@ func handleSubscribe(conn net.Conn, bm *BrokerManager, consumerID, topic, partit
 	if err != nil {
 		return fmt.Errorf("failed to register consumer: %v", err)
 	}
+
+	subscriptionKey := fmt.Sprintf("%s:%s", topic, partitionIDStr)
+
+	subscriptionMutex.Lock()
+	subscriptions[subscriptionKey] = append(subscriptions[subscriptionKey], Subscription{ConsumerID: consumerID, Conn: conn})
+	subscriptionMutex.Unlock()
+
+	queueMutex.Lock()
+	if _, exists := messageQueues[subscriptionKey]; !exists {
+		messageQueues[subscriptionKey] = make(chan Message, 100) // buffer size of 100, will adjust later
+		go messageDeliveryWorker(subscriptionKey)
+	}
+	queueMutex.Unlock()
 
 	fmt.Fprintf(conn, "OK: Subscribed to topic: %s, partition %d\n", topic, partitionID)
 	return nil
