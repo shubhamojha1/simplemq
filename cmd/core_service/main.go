@@ -363,6 +363,12 @@ func handleConnection(conn net.Conn, bm *BrokerManager, shutdownCh chan<- struct
 				continue
 			}
 			err = handleConsumeMessage(conn, bm, parts[1], parts[2], parts[3])
+		case "SUBSCRIBE":
+			if len(parts) < 4 {
+				fmt.Fprintf(conn, "ERROR: Invalid SUBSCRIBE command\n")
+				continue
+			}
+			err = handleSubscribe(conn, bm, parts[1], parts[2], parts[3])
 		case "CREATE_TOPIC":
 			if len(parts) < 3 {
 				fmt.Fprintf(conn, "ERROR: Invalid CREATE_TOPIC command\n")
@@ -437,6 +443,43 @@ func handleConsumeMessage(conn net.Conn, bm *BrokerManager, consumerID, topic, p
 	for _, message := range messages {
 		fmt.Fprintf(conn, "Message: %s\n", string(message))
 	}
+	return nil
+}
+
+func handleSubscribe(conn net.Conn, bm *BrokerManager, consumerID, topic, partitionIDStr string) error {
+	partitionID, err := strconv.Atoi(partitionIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid partition ID: %v", err)
+	}
+
+	// check if topics exists
+	exists, err := bm.zkClient.TopicExists(topic)
+
+	if err != nil {
+		return fmt.Errorf("failed to check topic existence: %v", err)
+	}
+
+	if !exists {
+		return fmt.Errorf("topic %s does not exist", topic)
+	}
+
+	// Get number of partitions for the topic
+	partitions, err := bm.zkClient.GetTopicPartitions(topic)
+	if err != nil {
+		return fmt.Errorf("failed to get topic partitions: %v", err)
+	}
+
+	if partitionID < 0 || partitionID >= partitions {
+		return fmt.Errorf("invalid partition ID: %d (topic has %d partitions)", partitionID, partitions)
+	}
+
+	// register the consumer for the topic and partition
+	err = bm.zkClient.RegisterConsumer(consumerID, topic, partitionID)
+	if err != nil {
+		return fmt.Errorf("failed to register consumer: %v", err)
+	}
+
+	fmt.Fprintf(conn, "OK: Subscribed to topic: %s, partition %d\n", topic, partitionID)
 	return nil
 }
 
