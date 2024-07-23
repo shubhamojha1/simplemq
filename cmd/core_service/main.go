@@ -29,11 +29,35 @@ type BrokerManager struct {
 	mu       sync.Mutex
 }
 
+type Message struct {
+	Topic     string
+	Partition int
+	Data      []byte
+}
+
+type Subscription struct {
+	ConsumerID string
+	Conn       net.Conn
+}
+
 type BrokerConfig struct {
 	BrokerCount int `json:"broker_count"`
 }
 
+var (
+	subscriptions     map[string][]Subscription // key: "topic: partition"
+	subscriptionMutex sync.RWMutex
+	messageQueues     map[string]chan Message // ket: "topic: partition"
+	queueMutex        sync.RWMutex
+)
+
 const configFilePath = "./broker_config.json"
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+	subscriptions = make(map[string][]Subscription)
+	messageQueues = make(map[string]chan Message)
+}
 
 func NewBrokerManager(zkClient *zookeeper_client.ZookeeperClient, wal *wal.WAL) *BrokerManager {
 	return &BrokerManager{
@@ -83,10 +107,6 @@ func (bm *BrokerManager) RemoveBroker(id string) error {
 	delete(bm.brokers, id)
 	log.Printf("RemoveBroker: Successfully removed broker %s", id)
 	return nil
-}
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
 }
 
 func generateNewBrokerID() string {
