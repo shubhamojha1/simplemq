@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -258,4 +259,52 @@ func (z *ZookeeperClient) UpdateBrokerHeartBeat(brokerID string) error {
 	fmt.Printf("Updated heartbeat for broker %s\n", brokerID)
 	return nil
 
+}
+
+func (z *ZookeeperClient) TopicExists(topic string) (bool, error) {
+	topicPath := fmt.Sprintf("%s/%s", topicPath, topic)
+	exists, _, err := z.conn.Exists(topicPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if topic exists: %v", err)
+	}
+	return exists, nil
+
+}
+
+func (z *ZookeeperClient) GetTopicPartitions(topic string) (int, error) {
+	topicPath := fmt.Sprintf("%s/%s", topicPath, topic)
+	data, _, err := z.conn.Get(topicPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to ge topic data: %v", err)
+	}
+	partitions, err := strconv.Atoi(string(data))
+	if err != nil {
+		return 0, fmt.Errorf("invalid partition count data: %v", err)
+	}
+
+	return partitions, nil
+
+}
+
+func (z *ZookeeperClient) RegisterConsumer(consumerID, topic string, partitionID int) error {
+	consumerPath := fmt.Sprintf("%s/%s/consumers/%s", topicPath, topic, consumerID)
+	partitionPath := fmt.Sprintf("%s/partition_%d", consumerPath, partitionID)
+
+	// Ensure the consumer path exists
+	err := z.createPathIfNotExist(consumerPath)
+	if err != nil {
+		return fmt.Errorf("failed to create consumer path: %v", err)
+	}
+
+	// create znode for partition subscription
+	_, err = z.conn.Create(partitionPath, []byte(fmt.Sprintf("%d", partitionID)), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
+	if err != nil {
+		if err == zk.ErrNodeExists {
+			return fmt.Errorf("consumer %s is already subscribed to topic %s, partition %d", consumerID, topic, partitionID)
+		}
+		return fmt.Errorf("failed to register consumer: %v", err)
+	}
+
+	log.Printf("Consumer %s registered for topic %s, partition %d", consumerID, topic, partitionID)
+	return nil
 }
