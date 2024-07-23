@@ -545,3 +545,18 @@ func handleRemoveBroker(conn net.Conn, bm *BrokerManager, id string) error {
 
 	return nil
 }
+
+func messageDeliveryWorker(subscriptionKey string) {
+	for msg := range messageQueues[subscriptionKey] {
+		subscriptionMutex.RLock()
+		subs := subscriptions[subscriptionKey]
+		subscriptionMutex.RUnlock()
+
+		for _, sub := range subs {
+			_, err := fmt.Fprintf(sub.Conn, "Message: %s\n", string(msg.Data))
+			if err != nil {
+				log.Printf("Error delivering message to consumer %s: %v", sub.ConsumerID, err)
+			}
+		}
+	}
+}
